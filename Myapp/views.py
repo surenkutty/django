@@ -17,17 +17,13 @@ class SignupView(CreateAPIView, ListAPIView):
     serializer_class = UserSerializer
     permission_classes = [AllowAny]
     def post(self, request, *args, **kwargs):
-        response = super().create(request, *args, **kwargs)
-        if response.status_code == status.HTTP_201_CREATED:
-            user = response.data
-            token, _ = Token.objects.get_or_create(user_id=user['id'])
-            response.data['token'] = token.key
-            print(token)
-            
-        return Response({
-            'token': str(token),
-            'username':user.username,
-        })
+        serializer=self.serializer_class(data=request.data)
+        if serializer.is_valid():
+            user=serializer.save()
+            return Response({
+                'user':UserSerializer(user).data
+            },status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
     
 class DbViews(ListAPIView):
     queryset = get_user_model().objects.all()
@@ -38,24 +34,28 @@ class DbViews(ListAPIView):
         serializer = UserSerializer(queryset, many=True)
         return Response(serializer.data)
     
-    
-class LoginViews(APIView):
-    def post(self,request):
-        username=request.data.get('username')
-        password=request.data.get('password')
-        user=authenticate(request,username=username,password=password)
-    
-        if not username or not password:
-            return Response({
-                "error":'username and password are required'
-            },status=status.HTTP_400_BAD_REQUEST)
 
-        
+
+class LoginView(APIView):
+   
+    permission_classes = [AllowAny]
+    def post(self, request):
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        if not username or not password:
+            return Response({'error': 'Username and password are required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user = authenticate(request, username=username, password=password)
+
         if user is not None:
-            login(request,user)
+            login(request, user)
+            token, _ = Token.objects.get_or_create(user=user)
             return Response({
-                'message':'loginSucessFully'
-                
-                },status=status.HTTP_200_OK)
+                'token': token.key,
+                'user_id': user.id,
+                'username': user.username
+            }, status=status.HTTP_200_OK)
         else:
             return Response({'error': 'Invalid credentials'}, status=status.HTTP_401_UNAUTHORIZED)
+
